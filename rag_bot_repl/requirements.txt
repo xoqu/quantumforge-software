@@ -1,0 +1,7 @@
+chromadb>=1.0,<2
+langchain-chroma>=0.2,<2
+langchain-huggingface>=0.2,<2
+sentence-transformers>=3.4,<6
+openai>=1.100,<3
+python-dotenv>=1.0,<2
+torch>=2.4
