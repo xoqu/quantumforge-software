@@ -1,0 +1,85 @@
+name: rag-bot-secure
+
+services:
+  chroma:
+    image: ${CHROMA_IMAGE:-chromadb/chroma:latest}
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/data
+
+  indexer:
+    build:
+      context: .
+    profiles: ["tools"]
+    init: true
+    depends_on:
+      - chroma
+    environment:
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      HF_HOME: /hf-cache
+      SENTENCE_TRANSFORMERS_HOME: /hf-cache/sentence-transformers
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+    volumes:
+      - huggingface_cache:/hf-cache
+      - ./input/knowledge_base:/knowledge_base:ro
+      - ./input/malicious_docs:/malicious_docs:ro
+      - ./runtime/indexer:/reports
+    command:
+      - python
+      - /app/indexer/build_security_index.py
+      - --knowledge-base
+      - /knowledge_base
+      - --malicious-dir
+      - /malicious_docs
+      - --collection
+      - neon_rift_security_test
+      - --report
+      - /reports/security_index_report.json
+      - --device
+      - cpu
+      - --recreate
+
+  rag-api:
+    build:
+      context: .
+    init: true
+    restart: on-failure
+    depends_on:
+      - chroma
+    env_file:
+      - .env
+    environment:
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      CHROMA_COLLECTION: neon_rift_security_test
+      HF_HOME: /hf-cache
+      SENTENCE_TRANSFORMERS_HOME: /hf-cache/sentence-transformers
+      DEVICE: ${DEVICE:-cpu}
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+    volumes:
+      - huggingface_cache:/hf-cache
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://localhost:8080/health', timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
+volumes:
+  chroma_data:
+    name: rag-bot-secure_chroma_data
+  huggingface_cache:
+    name: rag-bot-secure_huggingface_cache
